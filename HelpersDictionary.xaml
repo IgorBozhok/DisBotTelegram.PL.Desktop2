@@ -1,0 +1,7 @@
+﻿<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:converters="clr-namespace:DisBotTelegram.PL.Desktop.Converters"
+                    xmlns:local="clr-namespace:DisBotTelegram.PL.Desktop.Dictionaries">
+    <converters:MultiBindingConverter x:Key="MultiConverter"
+                                      x:Shared="False"/>
+</ResourceDictionary>
