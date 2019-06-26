@@ -1,6 +1,8 @@
 ﻿using DisBotTelegram.BLL;
 using DisBotTelegram.BLL.DTO;
+using DisBotTelegram.BLL.Helper;
 using DisBotTelegram.BLL.Interfaces;
+using DisBotTelegram.BLL.Logic;
 using DisBotTelegram.BLL.Services;
 using DisBotTelegram.PL.Desktop.Helper;
 using DisBotTelegram.PL.Desktop.Model;
@@ -17,19 +19,9 @@ namespace DisBotTelegram.PL.Desktop.ViewModels
 {
     public class DispatcherViewModel : BaseViewModel
     {
-        private ListBox _mainList;
-
-        public ListBox MainList
-        {
-            get { return _mainList ?? (_mainList = new ListBox()); }
-            set { _mainList = value; OnPropertyChanged(); }
-        }
-
-
-
-
         #region Fields
-        private BotLogic _botLogic;
+        private ListBox _mainListBox;
+        private LogicBot _botLogic;
         private UnityContainer _container;
         private ModelClientMessageService _modelClientMessageService;
         private ModelClientService _modelClientService;
@@ -96,13 +88,11 @@ namespace DisBotTelegram.PL.Desktop.ViewModels
             get { return _isConnect; }
             set { _isConnect = value; OnPropertyChanged(); }
         }
-
         public bool IsDisconnect
         {
             get { return _isDisconnect; }
             set { _isDisconnect = value; OnPropertyChanged(); }
         }
-
         public bool IsSendMessage
         {
             get { return _isSendMessage; }
@@ -115,12 +105,18 @@ namespace DisBotTelegram.PL.Desktop.ViewModels
             set { _clientsChat = value; OnPropertyChanged(); }
         }
 
+        public ListBox MainListBox
+        {
+            get { return _mainListBox ?? (_mainListBox = new ListBox()); }
+            set { _mainListBox = value; OnPropertyChanged(); }
+
+        }
         #endregion
 
         #region Ctor
         public DispatcherViewModel()
         {
-            _botLogic = new BotLogic();
+            _botLogic = new LogicBot();
             _container = new UnityContainer();
             _container.RegisterType<IClientMessageService, ClientMessageService>();
             _container.RegisterType<IClientService, ClientService>();
@@ -134,6 +130,7 @@ namespace DisBotTelegram.PL.Desktop.ViewModels
             _clients = _modelClientService.GetClients();
             _clientsChat = new ObservableCollection<ClientInfo>();
 
+            _mainListBox = new ListBox();
 
             for (int i = 0; i < Application.Current.Windows.Count; i++)
             {
@@ -155,7 +152,133 @@ namespace DisBotTelegram.PL.Desktop.ViewModels
             SendMessageCommand = new RelayCommand(OnSendMessageCommandExecute);
             ConnectCommand = new RelayCommand(OnConnectCommand);
             DisconnectCommand = new RelayCommand(OnDisconnectCommand);
-            EventPost();
+            //EventPost();
+
+            _botLogic.LogStart += _botLogic_LogStart;
+
+            UserInfo = StaticLogicBot.UserInfo;
+        }
+
+        private void _botLogic_LogStart(object sender, BLL.Logic.EventsArgs.BotEventArgs e)
+        {
+           Application.Current.Dispatcher.Invoke( () =>
+           {
+               var countClientDB = 0;
+               var coutClientList = 0;
+
+               if (_clients.Count == 0)
+               {
+                   var addClient = new ClientInfo()
+                   {
+                       FirstName = _botLogic.Messages.FirstName,
+                       LastName = _botLogic.Messages.LastName,
+                       TelegramId = _botLogic.Messages.Id,
+                       Username = _botLogic.Messages.UserName,
+                   };
+
+                   _modelClientService.Add(addClient);
+                   _clients.Add(addClient);
+                   _clientsChat.Add(addClient);
+               }
+               foreach (var client in _clients)
+               {
+
+                   if (client.TelegramId.Equals(_botLogic.Messages.Id))
+                   {
+                       break;
+                   }
+                   else if (!string.IsNullOrEmpty(client.TelegramId))
+                   {
+                       countClientDB++;
+                   }
+
+                   if (_clients.Count == countClientDB)
+                   {
+                       var addClient = new ClientInfo()
+                       {
+                           FirstName = e.Message.FirstName,
+                           LastName = e.Message.LastName,
+                           TelegramId = e.Message.Id,
+                           Username = e.Message.UserName,
+                       };
+                       _modelClientService.Add(addClient);
+                       _clients.Add(addClient);
+                       _clientsChat.Add(addClient);
+                       break;
+                   }
+               }
+
+               var addClientList = new ClientInfo()
+               {
+                   FirstName = e.Message.FirstName,
+                   LastName = e.Message.LastName,
+                   TelegramId = e.Message.Id,
+                   Username = e.Message.UserName,
+               };
+
+
+               if (_clientsChat.Count == 0)
+               {
+                   _clientsChat.Add(addClientList);
+               }
+
+               foreach (var item in _clientsChat)
+               {
+                   if (item.TelegramId.Equals(e.Message.Id))
+                   {
+                       break;
+                   }
+                   else if (!item.TelegramId.Equals(e.Message.Id))
+                   {
+                       coutClientList++;
+                   }
+
+                   if (coutClientList == _clientsChat.Count())
+                   {
+                       _clientsChat.Add(addClientList);
+                       break;
+                   }
+               }
+               var message = new DisBotMessage()
+               {
+                   Content = e.Message.Content,
+                   Date = e.Message.Date,
+                   LastName = e.Message.LastName,
+                   FirstName = e.Message.FirstName,
+                   UserName = e.Message.UserName,
+                   Type = DisBotMessage.MessageType.OutMessage,
+               };
+
+
+               Messages.Add(message);
+               _mainListBox.ScrollIntoView(message);
+
+               _clients = _modelClientService.GetClients();
+               var tmpId = 0;
+               foreach (var item in _clients)
+               {
+                   if (item.TelegramId.Equals(e.Message.Id))
+                   {
+                       tmpId = item.Id;
+                       break;
+                   }
+               }
+
+               CheckUserName();
+
+               var messageDB = new ClientMessageInfo()
+               {
+                   MessageClient = e.Message.Content,
+                   TimeMassage = e.Message.Date,
+                   UserId = UserInfo.Id,
+                   ClientId = tmpId
+               };
+               _modelClientMessageService.Add(messageDB);
+               if (!String.IsNullOrEmpty(UserName))
+               {
+                   IsSendMessage = true;
+               }
+           });
         }
 
         private void DispatcherViewModel_Closed(object sender, EventArgs e)
@@ -183,9 +306,9 @@ namespace DisBotTelegram.PL.Desktop.ViewModels
             IsDisconnect = true;
         }
 
-        private void EventPost() /////////////////////////////
+        /*private void EventPost()
         {
-            UserInfo = StaticLogin.UserInfo;
+            UserInfo = StaticLogicBot.UserInfo;
             Console.WriteLine();
             _botLogic.Log += buffer =>
             {
@@ -196,21 +319,21 @@ namespace DisBotTelegram.PL.Desktop.ViewModels
                 {
                     var addClient = new ClientInfo()
                     {
-                        FirstName = _botLogic.Masseges.FirstName,
-                        LastName = _botLogic.Masseges.LastName,
-                        TelegramId = _botLogic.Masseges.Id,
-                        Username = _botLogic.Masseges.UserName,
+                        FirstName = _botLogic.Messages.FirstName,
+                        LastName = _botLogic.Messages.LastName,
+                        TelegramId = _botLogic.Messages.Id,
+                        Username = _botLogic.Messages.UserName,
                     };
 
                     _modelClientService.Add(addClient);
                     _clients.Add(addClient);
                     _clientsChat.Add(addClient);
-                }
+                }//
 
                 foreach (var client in _clients)
                 {
 
-                    if (client.TelegramId.Equals(_botLogic.Masseges.Id))
+                    if (client.TelegramId.Equals(_botLogic.Messages.Id))
                     {
                         break;
                     }
@@ -223,10 +346,10 @@ namespace DisBotTelegram.PL.Desktop.ViewModels
                     {
                         var addClient = new ClientInfo()
                         {
-                            FirstName = _botLogic.Masseges.FirstName,
-                            LastName = _botLogic.Masseges.LastName,
-                            TelegramId = _botLogic.Masseges.Id,
-                            Username = _botLogic.Masseges.UserName,
+                            FirstName = _botLogic.Messages.FirstName,
+                            LastName = _botLogic.Messages.LastName,
+                            TelegramId = _botLogic.Messages.Id,
+                            Username = _botLogic.Messages.UserName,
                         };
                         _modelClientService.Add(addClient);
                         _clients.Add(addClient);
@@ -237,12 +360,13 @@ namespace DisBotTelegram.PL.Desktop.ViewModels
 
                 var addClientList = new ClientInfo()
                 {
-                    FirstName = _botLogic.Masseges.FirstName,
-                    LastName = _botLogic.Masseges.LastName,
-                    TelegramId = _botLogic.Masseges.Id,
-                    Username = _botLogic.Masseges.UserName,
+                    FirstName = _botLogic.Messages.FirstName,
+                    LastName = _botLogic.Messages.LastName,
+                    TelegramId = _botLogic.Messages.Id,
+                    Username = _botLogic.Messages.UserName,
                 };
-                
+
+
                 if (_clientsChat.Count == 0)
                 {
                     _clientsChat.Add(addClientList);
@@ -250,11 +374,11 @@ namespace DisBotTelegram.PL.Desktop.ViewModels
 
                 foreach (var item in _clientsChat)
                 {
-                    if (item.TelegramId.Equals(_botLogic.Masseges.Id))
+                    if (item.TelegramId.Equals(_botLogic.Messages.Id))
                     {
                         break;
                     }
-                    else if (!item.TelegramId.Equals(_botLogic.Masseges.Id))
+                    else if (!item.TelegramId.Equals(_botLogic.Messages.Id))
                     {
                         coutClientList++;
                     }
@@ -265,14 +389,24 @@ namespace DisBotTelegram.PL.Desktop.ViewModels
                         break;
                     }
                 }
-                Messages.Add(buffer);
-                Application.Current.Dispatcher.Invoke(() => MainList.ScrollIntoView(buffer));
+                var message = new DisBotMessage()
+                {
+                    Content = _botLogic.Messages.Content,
+                    Date = _botLogic.Messages.Date,
+                    LastName = _botLogic.Messages.LastName,
+                    FirstName = _botLogic.Messages.FirstName,
+                    UserName = _botLogic.Messages.UserName,
+                    Type = DisBotMessage.MessageType.OutMessage,
+                };
+
+                Messages.Add(message);
+                _mainListBox.ScrollIntoView(message);
 
                 _clients = _modelClientService.GetClients();
                 var tmpId = 0;
                 foreach (var item in _clients)
                 {
-                    if (item.TelegramId.Equals(_botLogic.Masseges.Id))
+                    if (item.TelegramId.Equals(_botLogic.Messages.Id))
                     {
                         tmpId = item.Id;
                         break;
@@ -281,11 +415,10 @@ namespace DisBotTelegram.PL.Desktop.ViewModels
 
                 CheckUserName();
 
-
                 var messageDB = new ClientMessageInfo()
                 {
-                    MessageClient = _botLogic.Masseges.Content,
-                    TimeMassage = _botLogic.Masseges.Date,
+                    MessageClient = _botLogic.Messages.Content,
+                    TimeMassage = _botLogic.Messages.Date,
                     UserId = UserInfo.Id,
                     ClientId = tmpId
                 };
@@ -295,11 +428,17 @@ namespace DisBotTelegram.PL.Desktop.ViewModels
                     IsSendMessage = true;
                 }
             };
-        }
-        private void OnSendMessageCommandExecute(object obj) 
+        }*/
+
+        private void _mainListBox_FocusableChanged(object sender, DependencyPropertyChangedEventArgs e)
         {
-            var objects = obj as object[];
-            MainList = objects[0] as ListBox;
+            throw new NotImplementedException();
+        }
+
+        private void OnSendMessageCommandExecute(object obj)
+        {
+            _mainListBox = obj as ListBox;
+           
 
             if (String.IsNullOrEmpty(UserName))
             {
@@ -311,11 +450,11 @@ namespace DisBotTelegram.PL.Desktop.ViewModels
                 CheckUserName();
             }
             else
-                _botLogic.Bot_Send_Message(_botLogic.Masseges.Id, _message);
+                _botLogic.Bot_Send_Message(_botLogic.Messages.Id, _message);
             var tmpId = 0;
             foreach (var item in _clients)
             {
-                if (item.TelegramId.Equals(_botLogic.Masseges.Id))
+                if (item.TelegramId.Equals(_botLogic.Messages.Id))
                 {
                     tmpId = item.Id;
                     break;
@@ -328,8 +467,9 @@ namespace DisBotTelegram.PL.Desktop.ViewModels
                 UserName = UserInfo.UserLogin,
                 Type = DisBotMessage.MessageType.InMessage,
             };
+
             Messages.Add(message);
-            MainList.ScrollIntoView(message);
+            _mainListBox.ScrollIntoView(message);
 
             var addDispatcherMessage = new DispatcherMessageInfo()
             {
@@ -344,17 +484,17 @@ namespace DisBotTelegram.PL.Desktop.ViewModels
 
         private void CheckUserName()
         {
-            if (!String.IsNullOrEmpty(_botLogic.Masseges.UserName))
+            if (!String.IsNullOrEmpty(_botLogic.Messages.UserName))
             {
-                UserName = _botLogic.Masseges.UserName;
+                UserName = _botLogic.Messages.UserName;
             }
-            else if (!String.IsNullOrEmpty(_botLogic.Masseges.LastName))
+            else if (!String.IsNullOrEmpty(_botLogic.Messages.LastName))
             {
-                UserName = _botLogic.Masseges.LastName;
+                UserName = _botLogic.Messages.LastName;
             }
-            else if (!String.IsNullOrEmpty(_botLogic.Masseges.FirstName))
+            else if (!String.IsNullOrEmpty(_botLogic.Messages.FirstName))
             {
-                UserName = _botLogic.Masseges.FirstName;
+                UserName = _botLogic.Messages.FirstName;
             }
             else
                 UserName = "Unknown name";
